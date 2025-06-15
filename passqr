@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""
+PassQR - Generate secure passwords and display them as QR codes
+"""
+
+import random
+import string
+import argparse
+import time
+import sys
+from pathlib import Path
+
+# Constants
+DEFAULT_PASSWORD_LENGTH = 32
+DEFAULT_QR_SIZE = 768
+QR_CODE_MODULE = 'qrcode'
+PIL_MODULE = 'PIL'
+
+# Color handling
+try:
+    from colorama import init, Fore, Style
+    init()
+    HAS_COLORAMA = True
+except ImportError:
+    class DummyStyle:
+        def __getattr__(self, name):
+            return ''
+    Fore = Style = DummyStyle()
+    HAS_COLORAMA = False
+
+def generate_password(length=DEFAULT_PASSWORD_LENGTH):
+    """Generate a secure password with the specified length."""
+    chars = string.ascii_letters + string.digits + '!@#$%^&*()_+-=[]{}|;:,.<>?'
+    return ''.join(random.SystemRandom().choice(chars) for _ in range(length))
+
+def _create_qr_code_instance(data, box_size=1, border=1):
+    """Create and return a QRCode instance with the given data and settings."""
+    try:
+        qrcode = __import__(QR_CODE_MODULE)
+        qr = qrcode.QRCode(version=1, box_size=box_size, border=border)
+        qr.add_data(data)
+        qr.make(fit=True)
+        return qr
+    except ImportError as e:
+        print(f"Error: Required package '{QR_CODE_MODULE}' not found. Install it with: pip install {QR_CODE_MODULE}[pil]")
+        sys.exit(1)
+
+def create_qr_code(data):
+    """Create a QR code matrix from the input data."""
+    qr = _create_qr_code_instance(data, box_size=1, border=1)
+    return qr.get_matrix()
+
+def _spiral_coords(n):
+    """Generate coordinates in a spiral order starting from the center."""
+    if n == 0:
+        return []
+        
+    # Start from the center
+    x = y = n // 2
+    yield (y, x)
+    
+    # Directions: right, down, left, up
+    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    steps = 1
+    
+    while steps < n:
+        # For each direction
+        for dx, dy in directions:
+            # Take 'steps' steps in current direction
+            for _ in range(steps):
+                x += dx
+                y += dy
+                if 0 <= x < n and 0 <= y < n:
+                    yield (y, x)  # y is row, x is column
+            # After every 2 directions, increase steps
+            if dx == 0:  # After down or up
+                steps += 1
+
+def animate_qr_code(matrix, delay=0.001):
+    """Animate the QR code being drawn in a spiral pattern from the center."""
+    size = len(matrix)
+    if size == 0:
+        return
+    
+    # Clear screen and move cursor to top-left
+    sys.stdout.write('\033[2J\033[H')
+    
+    # Draw the QR code in a spiral pattern
+    for y, x in _spiral_coords(size):
+        # Only draw if the cell is filled (True)
+        if matrix[y][x]:
+            # Move cursor to position and print the character
+            sys.stdout.write(f'\033[{y+1};{x*2+1}H██')
+            sys.stdout.flush()
+            time.sleep(delay)
+    
+    # Ensure all cells are drawn (in case some were skipped in the spiral)
+    for y in range(size):
+        for x in range(size):
+            if matrix[y][x]:
+                sys.stdout.write(f'\033[{y+1};{x*2+1}H██')
+    
+    print()  # Move to new line after QR code
+    sys.stdout.flush()
+
+def save_qr_code_as_png(data, output_path, size=DEFAULT_QR_SIZE):
+    """Save the QR code as a PNG file."""
+    try:
+        # Import PIL only when needed
+        PIL = __import__(PIL_MODULE, fromlist=['Image'])
+        
+        # Create QR code with larger box size for better quality
+        qr = _create_qr_code_instance(data, box_size=10, border=4)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to RGB if not already and resize
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        img.thumbnail((size, size), PIL.Image.Resampling.LANCZOS)
+        
+        # Save the image
+        output_path = Path(output_path).expanduser().resolve()
+        img.save(output_path)
+        print(f'[ok] QR code saved to {output_path}')
+    except Exception as e:
+        print(f'Error saving QR code: {str(e)}')
+        sys.exit(1)
+
+def display_qr_code(matrix, animated=True):
+    """Display QR code in the terminal, with optional animation."""
+    print('QR Code (scan with your device):\n')
+    if not animated:
+        print('\n'.join(''.join('██' if cell else '  ' for cell in row) for row in matrix))
+    else:
+        animate_qr_code(matrix)
+
+def display_password(password):
+    """Display the generated password with color if available."""
+    color_start = f"{Fore.CYAN}{Style.BRIGHT}" if HAS_COLORAMA else ""
+    color_end = f"{Style.RESET_ALL}" if HAS_COLORAMA else ""
+    print(f'\nPassword: {color_start}{password}{color_end}')
+
+def parse_arguments():
+    """Parse and return command line arguments."""
+    parser = argparse.ArgumentParser(description='Generate a secure password and display it as a QR code.')
+    parser.add_argument('--length', type=int, default=DEFAULT_PASSWORD_LENGTH, 
+                       help=f'Password length (default: {DEFAULT_PASSWORD_LENGTH})')
+    parser.add_argument('--no-animation', action='store_true', help='Skip QR code animation')
+    parser.add_argument('-o', '--output', help='Save QR code as PNG file')
+    parser.add_argument('--size', type=int, default=DEFAULT_QR_SIZE, 
+                       help=f'PNG size in pixels (default: {DEFAULT_QR_SIZE})')
+    return parser.parse_args()
+
+def main():
+    args = parse_arguments()
+    password = generate_password(args.length)
+    matrix = create_qr_code(password)
+    
+    display_qr_code(matrix, not args.no_animation)
+    display_password(password)
+    
+    # Display instructions
+    print('\n[note] Password is shown above - you can copy it manually')
+    if not args.output:
+        print('      To save as PNG: ./passqr -o filename.png')
+    
+    if args.output:
+        save_qr_code_as_png(password, args.output, args.size)
+
+if __name__ == '__main__':
+    main()
