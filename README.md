@@ -13,7 +13,7 @@ A simple command-line tool to generate secure passwords and display them as QR c
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/passqr.git
+   git clone https://github.com/abildma/passqr.git
    cd passqr
    ```
 
