@@ -8,7 +8,7 @@ A simple command-line tool to generate secure passwords and display them as QR c
 - Display password as a scannable QR code in the terminal
 - Option to save QR code as a high-resolution PNG file
 - Clean, simple interface with no external dependencies beyond Python standard library
-
+![output](https://github.com/user-attachments/assets/bc01c3e4-fd72-43be-8de2-26975dbfa4bc)
 ## Installation
 
 1. **Clone the repository**
